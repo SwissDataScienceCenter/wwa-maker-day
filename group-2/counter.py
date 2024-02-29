@@ -7,27 +7,15 @@ onboardLED = Pin(25, Pin.OUT)
 red_button = Pin(2, Pin.IN, Pin.PULL_DOWN)
 green_button = Pin(3, Pin.IN, Pin.PULL_DOWN)
 
-segments = [Pin(13-x, Pin.OUT) for x in range(0, 5)]
+segments = [Pin(13-x, Pin.OUT) for x in range(5)]
+dips = [Pin(6-x, Pin.IN, Pin.PULL_DOWN) for x in range(5)]
 
 counter = 0
 
 while True:
-    sleep(0.2)
+    sleep(1)
     
-    if green_button.value() == 1:
-        counter += 1
-        
-    if red_button.value() == 1:
-        counter -= 1
-        
-    if counter < 0:
-        counter = 0
-    if counter > 5:
-        counter = 5
-        
-    for seg in segments[:counter]:
-        seg.value(1)
-    for seg in segments[counter:]:
-        seg.value(0)
-        
-    print(counter)
+    print("---")
+    
+    for i, dip in enumerate(dips):
+        print(f"dip {i+1}: {dip.value()}")
