@@ -5,16 +5,6 @@ import array
 import _thread
 import random
 
-# clock_pin = 11
-# data_pin_start = 0
-# latch_pin_start = 12
-# row_pin_start = 6
-
-# row_bits = 3
-# data_bits = 192  # note must be divisible by 32
-
-# row_ar_len = 50
-
 # R1, G1, B1, R2, G2, B2 pins
 DATA_PIN_START = const(0)
 
@@ -358,7 +348,6 @@ while True:
     for i in range(BLOCKS_PER_ROW):
         val = frameBuffer[baseIndex + i]
         sm_data.put(val)
-        # sm_data.put(out_rows[counter][i])
 
     counter += 1
     if counter > 15:
