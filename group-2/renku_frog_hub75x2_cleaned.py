@@ -15,7 +15,7 @@ import random
 
 # row_ar_len = 50
 
-# R0, G0, B0, R1, G1, B1 pins
+# R1, G1, B1, R2, G2, B2 pins
 DATA_PIN_START = const(0)
 
 # A, B, C, D, E pins
@@ -91,7 +91,9 @@ def row_hub75():
     nop().side(0)
 
 
-# setup state machines
+# Setup state machines.
+# ``sm_data`` is used to push pixel data onto a pair (2x) of scanlines
+# and ``sm_row`` is used to control which rows (i.e. scanlines) are active.
 def create_state_machines():
     sm_data = rp2.StateMachine(
         0,
@@ -114,34 +116,22 @@ sm_data, sm_row = create_state_machines()
 sm_row.active(1)
 sm_data.active(1)
 
+# Drawing counter for scanlines. Should stay in range [0, NUM_ROWS[.
 counter = 0
 
-toggle = False
+# This is essentially a draw lock.
+writing = False
 
-rows = []
-
-fast_buffer1 = array.array("I")
-fast_buffer2 = array.array("I")
+# Double buffering: we should draw onto ``drawBuffer`` (with the draw lock active).
+# When drawing is done, the two buffers are swapped and ``frameBuffer``
+# is shown at least once.
+drawBuffer = array.array("I")
+frameBuffer = array.array("I")
 for i in range(BLOCKS_PER_ROW * NUM_ROWS):
-    fast_buffer1.append(0)
-    fast_buffer2.append(0)
-drawBuffer = fast_buffer1
-frameBuffer = fast_buffer2
+    drawBuffer.append(0)
+    frameBuffer.append(0)
 
-# fill with white
-# for j in range(NUM_ROWS):
-#     rows.append([])
-#     for i in range(BLOCKS_PER_ROW):
-#         rows[j].append(0xffffffff)
-
-
-# fill with black
-for j in range(NUM_ROWS):
-    rows.append([])
-    for i in range(BLOCKS_PER_ROW):
-        rows[j].append(0x00000000)
-
-# There are 32x32 3-bit values for each panel.
+# There are HUB_75_PANEL_WIDTH x HUB_75_PANEL_HEIGHT 3-bit values for each panel.
 # Pins r1g1b1 control scanlines 0-15 while pins r2g2b2 control scanlines 16-31
 # We want to write 24-bits at a time so we can write out 4 pixels per scanline at a time
 # 1st pixel 0th scanline would be the lowest bits (0-2)
@@ -149,10 +139,11 @@ for j in range(NUM_ROWS):
 # 2nd pixel 0th scanline would be the next lowest bits (6-8)
 # 2nd pixel 16th scanline would be the next lowest bits (9-11)
 # continue this pattern to fill our 24-bits
+# TODO: Validate and improve above explainer.
 
 
 @micropython.viper
-def set_pixel(x: int, y: int, rgb: uint):
+def set_pixel_raw(x: int, y: int, rgb: uint):
 
     bit_posn = (x % 4) * 6
     if y > 15:
@@ -171,9 +162,10 @@ def set_pixel(x: int, y: int, rgb: uint):
     drawBuffer[index] = val | uint(rgb << (bit_posn))
 
 
-def light_xy(x, y, r, g, b):
+# Sets a pixel. Note that ``r``, ``g`` and ``b`` can only be 0 or 1.
+def set_pixel(x: int, y: int, r: int, g: int, b: int):
     rgb = (r << 0) | (g << 1) | (b << 2)
-    set_pixel(x, y, rgb)
+    set_pixel_raw(x, y, rgb)
 
 
 # p-shape
@@ -181,45 +173,41 @@ def light_xy(x, y, r, g, b):
 def p_draw(init_x, init_y, r, g, b):
     # line 10 pixels high
     for i in range(10):
-        light_xy(init_x, init_y + i, r, g, b)
+        set_pixel(init_x, init_y + i, r, g, b)
     # line 4 pixesl across
     for i in range(4):
-        light_xy(init_x + i, init_y, r, g, b)
+        set_pixel(init_x + i, init_y, r, g, b)
     for i in range(4):
-        light_xy(init_x + i, init_y + 4, r, g, b)
+        set_pixel(init_x + i, init_y + 4, r, g, b)
     for i in range(3):
-        light_xy(init_x + 4, init_y + i + 1, r, g, b)
+        set_pixel(init_x + 4, init_y + i + 1, r, g, b)
 
 
 def i_draw(init_x, init_y, r, g, b):
     for i in range(4):
-        light_xy(init_x, init_y + i + 2, r, g, b)
-    light_xy(init_x, init_y, r, g, b)
+        set_pixel(init_x, init_y + i + 2, r, g, b)
+    set_pixel(init_x, init_y, r, g, b)
 
 
 def c_draw(init_x, init_y, r, g, b):
     for i in range(4):
-        light_xy(init_x, init_y + i + 1, r, g, b)
+        set_pixel(init_x, init_y + i + 1, r, g, b)
     for i in range(3):
-        light_xy(init_x + 1 + i, init_y, r, g, b)
-        light_xy(init_x + 1 + i, init_y + 5, r, g, b)
+        set_pixel(init_x + 1 + i, init_y, r, g, b)
+        set_pixel(init_x + 1 + i, init_y + 5, r, g, b)
 
 
 def o_draw(init_x, init_y, r, g, b):
     for i in range(4):
-        light_xy(init_x, init_y + i + 1, r, g, b)
-        light_xy(init_x + 4, init_y + i + 1, r, g, b)
+        set_pixel(init_x, init_y + i + 1, r, g, b)
+        set_pixel(init_x + 4, init_y + i + 1, r, g, b)
     for i in range(3):
-        light_xy(init_x + 1 + i, init_y, r, g, b)
-        light_xy(init_x + 1 + i, init_y + 5, r, g, b)
+        set_pixel(init_x + 1 + i, init_y, r, g, b)
+        set_pixel(init_x + 1 + i, init_y + 5, r, g, b)
 
 
+# Sets all pixels to black.
 def clearBuffer():
-    # reusing should be same or faster than reallocations
-    # for j in range(NUM_ROWS):
-    #    for i in range(BLOCKS_PER_ROW):
-    #        rows[j][i] = 0
-
     for i in range(NUM_ROWS * BLOCKS_PER_ROW):
         drawBuffer[i] = 0
 
@@ -232,8 +220,6 @@ def draw_text():
     global text_y
     global direction
     global writing
-    global current_rows
-    global rows
 
     writing = True
     text_y = text_y + direction
@@ -249,20 +235,12 @@ def draw_text():
     i_draw(9, int(text_y), 1, 1, 0)
     c_draw(11, int(text_y), 0, 1, 1)
     o_draw(16, int(text_y), 1, 0, 1)
+
     writing = False
-
-
-# draw_text()
-draw_counter = 0
-
-writing = False
-
-out_rows = rows
 
 
 def draw_performance():
     global writing
-    global rows
 
     writing = True
 
@@ -274,7 +252,7 @@ def draw_performance():
 
     for j in range(32):
         for i in range(32):
-            set_pixel(i, j, 1 + counter % 6)
+            set_pixel_raw(i, j, 1 + counter % 6)
             counter += 1
 
     end = time.ticks_us()
@@ -286,7 +264,6 @@ def draw_performance():
 
 def draw_test_pattern():
     global writing
-    global rows
 
     writing = True
 
@@ -294,14 +271,14 @@ def draw_test_pattern():
 
     for i in range(0, 32):
         # draw random selection of rows/colums using all colors
-        light_xy(i, 31, 0, 0, 1)
-        light_xy(i, 0, 0, 1, 0)
-        light_xy(i, 16, 0, 1, 1)
-        light_xy(0, i, 1, 0, 0)
-        light_xy(5, i, 1, 0, 1)
-        light_xy(15, i, 1, 1, 0)
-        light_xy(25, i, 1, 1, 1)
-        light_xy(30, i, 1, 0, 0)
+        set_pixel(i, 31, 0, 0, 1)
+        set_pixel(i, 0, 0, 1, 0)
+        set_pixel(i, 16, 0, 1, 1)
+        set_pixel(0, i, 1, 0, 0)
+        set_pixel(5, i, 1, 0, 1)
+        set_pixel(15, i, 1, 1, 0)
+        set_pixel(25, i, 1, 1, 1)
+        set_pixel(30, i, 1, 0, 0)
 
     writing = False
 
@@ -331,7 +308,6 @@ direction_x = 0.4
 
 def draw_frog():
     global writing
-    global rows
     global frog
     global text_y
     global direction
@@ -360,23 +336,26 @@ def draw_frog():
             yy = int(text_y) + y
 
             if c == "g":
-                light_xy(xx, yy, 0, 1, 0)
+                set_pixel(xx, yy, 0, 1, 0)
             if c == "r":
-                light_xy(xx, yy, 1, 0, 1)
+                set_pixel(xx, yy, 1, 0, 1)
 
     writing = False
 
 
-# draw_test_pattern()
-
+# This is a draw loop. For each pair (2x) of scanlines, we put the ``counter`` value in
+# the ``sm_row`` state machine's TX FIFO and then put each block of pixels into
+# the ``sm_data`` state machine's TX FIFO.
+# 
+# TODO: We should consider "swapping" the roles of the main thread and the
+# child thread here. That is, keep the main logic in the main thread and
+# have a child thread take care of drawing pixels.
 while True:
-    #     draw_test_pattern()
-    #
     sm_row.put(counter)
 
     # Write out 8 integers that hold 8 pixels worth of 3-bit RGB (two scanlines x four pixels)
-    baseIndex = counter * 32
-    for i in range(32):
+    baseIndex = counter * BLOCKS_PER_ROW
+    for i in range(BLOCKS_PER_ROW):
         val = frameBuffer[baseIndex + i]
         sm_data.put(val)
         # sm_data.put(out_rows[counter][i])
@@ -384,10 +363,8 @@ while True:
     counter += 1
     if counter > 15:
         counter = 0
-        if writing == False:
 
+        if not writing:
             # perform our double buffering
-            tempBuffer = frameBuffer
-            frameBuffer = drawBuffer
-            drawBuffer = tempBuffer
+            frameBuffer, drawBuffer = drawBuffer, frameBuffer
             _thread.start_new_thread(draw_frog, ())
