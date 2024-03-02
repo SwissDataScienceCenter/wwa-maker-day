@@ -115,6 +115,7 @@ writing = False
 # Double buffering: we should draw onto ``drawBuffer`` (with the draw lock active).
 # When drawing is done, the two buffers are swapped and ``frameBuffer``
 # is shown at least once.
+# Each block is a uint32, but we only use the lowest 24 bits.
 drawBuffer = array.array("I")
 frameBuffer = array.array("I")
 for i in range(BLOCKS_PER_ROW * NUM_ROWS):
@@ -130,6 +131,16 @@ for i in range(BLOCKS_PER_ROW * NUM_ROWS):
 # 2nd pixel 16th scanline would be the next lowest bits (9-11)
 # continue this pattern to fill our 24-bits
 # TODO: Validate and improve above explainer.
+#
+# Additional note: to make drawing more efficient, data is pushed onto
+# R1, G1, B1 and R2, G2, B2 at the same time. This means that each
+# block of pixels (24 bits) contains data for two non-contiguous rows.
+# This means that if a block contains data for row ``i < 16``,
+# then it also contains data for row ``i + 16``.
+# TODO: Consider another approach to drawing where the drawing buffer
+# is closer to a usual pixel bitmap and where a flushing operation
+# creates a frame buffer by doing the bit-wise arithmetics required
+# to draw on the hub 75 panel.
 
 
 @micropython.viper
